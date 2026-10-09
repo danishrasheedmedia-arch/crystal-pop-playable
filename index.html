@@ -1,0 +1,157 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#171b49">
+<title>Crystal Pop: Bubble Shooter</title>
+<script src="https://www.youtube.com/game_api/v1"></script>
+<style>
+*{box-sizing:border-box}body{margin:0;min-height:100dvh;display:grid;place-items:center;background:radial-gradient(circle at 50% -15%,#4257a1,#191f53 40%,#090d28 85%);color:#f8f8ff;font:700 14px system-ui,sans-serif}.app{width:min(100%,450px);padding:11px}.top{display:flex;align-items:center;justify-content:space-between;gap:8px;margin:0 2px 10px}.brand{font-size:19px;font-weight:900;letter-spacing:-.04em}.brand i{display:inline-grid;place-items:center;width:34px;height:34px;margin-right:6px;border-radius:10px;background:linear-gradient(145deg,#7cfaf3,#967cff);color:#1c1856;font-style:normal;box-shadow:0 2px 16px #85e8ff88}button{cursor:pointer;border:1px solid #ffffff50;border-radius:11px;background:#ffffff1a;color:inherit;font:800 13px system-ui,sans-serif;-webkit-tap-highlight-color:transparent}button:focus-visible{outline:3px solid #affbff;outline-offset:2px}.icon{min-width:37px;height:37px;font-size:18px}.hud{display:grid;grid-template-columns:repeat(4,1fr);gap:5px;margin-bottom:8px}.stat{text-align:center;border:1px solid #ffffff24;border-radius:12px;padding:6px 2px;background:linear-gradient(130deg,#2e3c79,#202b5c)}.stat span{display:block;font-size:9px;letter-spacing:.09em;text-transform:uppercase;color:#c1caf1}.stat b{font-size:16px}.stage{position:relative;overflow:hidden;border-radius:20px;border:2px solid #9fb0f28a;box-shadow:0 25px 58px #03061faa;background:#141b47}canvas{display:block;width:100%;height:auto;aspect-ratio:390/680;touch-action:none}.actions{display:flex;gap:8px;margin-top:9px}.actions button{height:44px}.bomb{flex:1;background:linear-gradient(120deg,#ffe080,#f48e75);color:#392344;border:0;box-shadow:0 4px 17px #f58e7855}.bomb.armed{outline:3px solid #fff8c6;outline-offset:-5px}.bomb:disabled{opacity:.5}.actions .menu{width:90px}.hint{text-align:center;color:#bdc8ed;font-size:11px;margin:9px 0 1px}.overlay{position:absolute;inset:0;z-index:4;display:grid;place-items:center;padding:20px;background:#080b30d5;backdrop-filter:blur(7px)}.overlay.hidden{display:none}.card{width:100%;max-height:96%;overflow:auto;text-align:center;border:1px solid #c8d9ff77;border-radius:24px;background:linear-gradient(150deg,#435596,#263271 60%,#232859);padding:24px 18px;box-shadow:0 22px 58px #050721bb,inset 0 1px #ffffff44}.card .mark{font-size:46px;filter:drop-shadow(0 5px 10px #88eaff99)}.card h1{font-size:30px;letter-spacing:-.05em;margin:8px 0}.card p{font-size:13px;font-weight:500;line-height:1.5;color:#e2e5ff;margin:8px 0 17px}.primary{width:100%;min-height:45px;color:#15244b;border:0;background:linear-gradient(130deg,#a9fff0,#87c9ff);font-size:16px}.secondary{width:100%;min-height:39px;margin-top:8px}.label{text-align:left;font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:#d9e5ff;margin:16px 2px 7px}.levels{display:grid;grid-template-columns:repeat(5,1fr);gap:6px}.levels button{aspect-ratio:1}.levels button.open{background:#8ae2ea;color:#142253}.levels button:disabled{opacity:.4;cursor:default}@media(max-width:370px){.app{padding:6px}.brand{font-size:16px}.stat b{font-size:14px}}
+</style>
+</head>
+<body>
+<main class="app">
+  <header class="top"><div class="brand"><i>◆</i>Crystal Pop</div><div><button id="sound" class="icon" title="Sound" aria-label="Toggle sound">♫</button> <button id="pause" class="icon" title="Pause" aria-label="Pause game">Ⅱ</button></div></header>
+  <div class="hud"><div class="stat"><span>Level</span><b id="level">1/20</b></div><div class="stat"><span>Score</span><b id="score">0</b></div><div class="stat"><span>Shots</span><b id="shots">65</b></div><div class="stat"><span>Best</span><b id="best">0</b></div></div>
+  <section class="stage"><canvas id="game" width="390" height="680" aria-label="Crystal bubble shooter"></canvas><div id="overlay" class="overlay"><div id="card" class="card"><h1>Crystal Pop</h1><p>Loading game...</p></div></div></section>
+  <div class="actions"><button id="bomb" class="bomb" type="button">💣 Bomb ×1</button><button id="menu" class="menu" type="button">Menu</button></div>
+  <p class="hint">Drag to aim, release to shoot. Match 3. Keyboard: ← → Space, B for bomb.</p>
+</main>
+<script>
+(()=>{
+  'use strict';
+  const W=390,H=680,R=17,D=36,STEP=31.2,TOP=66,LEFT=11,COLS=10,ROWS=16,MAX=20,GUN={x:195,y:604};
+  const COLORS=['#ff638c','#ffce57','#55e0bd','#7795ff','#c37bfa','#ff9b62'];
+  const canvas=document.querySelector('#game'),ctx=canvas.getContext('2d'),overlay=document.querySelector('#overlay'),card=document.querySelector('#card');
+  const el={level:document.querySelector('#level'),score:document.querySelector('#score'),shots:document.querySelector('#shots'),best:document.querySelector('#best')};
+  const bombButton=document.querySelector('#bomb'),soundButton=document.querySelector('#sound');
+  const sdkAvailable=typeof window.ytgame!=='undefined'&&typeof window.ytgame.game?.gameReady==='function';
+  const playable=sdkAvailable&&window.ytgame.IN_PLAYABLES_ENV===true;
+  let unlocked=1,best=0,level=1,score=0,shots=65,cloudLoaded=false,cloudDirty=false,saveChain=Promise.resolve();
+  let board=[],current,next,shot=null,angle=-Math.PI/2,bombs=1,armed=false,misses=0,credit=0,state='loading',sound=true,youtubeAudioEnabled=true,sdkPaused=false,ready=false,audio=null,last=0,shake=0,particles=[],labels=[],pointer=null;
+  if(playable){
+    soundButton.hidden=true;
+    try{youtubeAudioEnabled=ytgame.system.isAudioEnabled()}catch{youtubeAudioEnabled=false}
+    ytgame.system.onAudioEnabledChange(enabled=>{youtubeAudioEnabled=enabled;if(!enabled)audio?.suspend()});
+    ytgame.system.onPause(()=>{sdkPaused=true;pointer=null;audio?.suspend()});
+    ytgame.system.onResume(()=>{if(!sdkPaused)return;sdkPaused=false;last=0;if(ready)requestAnimationFrame(frame)});
+  }
+  function reportScore(){if(playable&&best>0)ytgame.engagement.sendScore({value:Math.trunc(best)}).catch(err=>console.warn('Score not sent',err))}
+  function persistProgress(){
+    if(playable){
+      if(!cloudLoaded){cloudDirty=true;return}
+      const data=JSON.stringify({version:1,unlocked,best});
+      saveChain=saveChain.catch(()=>{}).then(()=>ytgame.game.saveData(data)).catch(err=>console.warn('Progress not saved',err));
+    }else{
+      try{localStorage.setItem('crystal-pop-unlocked',String(unlocked));localStorage.setItem('crystal-pop-best',String(best))}catch{}
+    }
+  }
+  const pos=(r,c)=>({x:LEFT+R+c*D+(r%2?R:0),y:TOP+R+r*STEP});
+  const valid=(r,c)=>r>=0&&r<ROWS&&c>=0&&c<COLS;
+  const adjacent=(r,c)=>[[r,c-1],[r,c+1],[r-1,c+(r%2?0:-1)],[r-1,c+(r%2?1:0)],[r+1,c+(r%2?0:-1)],[r+1,c+(r%2?1:0)]].filter(([a,b])=>valid(a,b));
+  const randomColor=()=>COLORS[Math.floor(Math.random()*Math.min(4+Math.floor((level-1)/4),COLORS.length))];
+  const available=()=>[...new Set(board.flat().filter(v=>v&&v!=='bomb'))];
+  const pick=()=>{const a=available();return a.length?a[Math.floor(Math.random()*a.length)]:randomColor()};
+  function beep(type){
+    if(!sound||sdkPaused||(playable&&!youtubeAudioEnabled))return;
+    try{audio??=new(window.AudioContext||window.webkitAudioContext)();if(audio.state==='suspended')audio.resume();
+      const notes={shoot:[[430,.06]],pop:[[650,.08],[850,.11]],bomb:[[145,.18],[90,.25]],win:[[550,.1],[740,.12],[930,.22]],lose:[[245,.16],[165,.25]],tap:[[600,.04]]}[type]||[];
+      notes.forEach(([f,d],i)=>{const o=audio.createOscillator(),g=audio.createGain(),t=audio.currentTime+i*.065;o.type=type==='bomb'?'sawtooth':'sine';o.frequency.setValueAtTime(f,t);g.gain.setValueAtTime(.001,t);g.gain.exponentialRampToValueAtTime(type==='bomb'?.07:.045,t+.012);g.gain.exponentialRampToValueAtTime(.001,t+d);o.connect(g).connect(audio.destination);o.start(t);o.stop(t+d+.02)})
+    }catch{}
+  }
+  function hud(){el.level.textContent=level+'/'+MAX;el.score.textContent=score;el.shots.textContent=shots;el.best.textContent=best;bombButton.textContent='💣 Bomb ×'+bombs;bombButton.disabled=bombs<1||state!=='playing'||!!shot;bombButton.classList.toggle('armed',armed);soundButton.textContent=sound?'♫':'♪'}
+  function makeBoard(){board=Array.from({length:ROWS},()=>Array(COLS).fill(null));const rows=Math.min(11+Math.floor((level-1)/5),13);
+    for(let r=0;r<rows;r++)for(let c=0;c<COLS;c++){if(r>=rows-2&&Math.random()<.08)continue;const left=c?board[r][c-1]:null;board[r][c]=left&&left!=='bomb'&&Math.random()<.35?left:randomColor()}
+    for(let i=0;i<2+Math.floor(level/5);i++)board[2+Math.floor(Math.random()*(rows-5))][Math.floor(Math.random()*COLS)]='bomb';
+  }
+  function start(n,reset=false){level=Math.max(1,Math.min(MAX,n));if(reset)score=0;shots=65+Math.floor((level-1)/4)*8;bombs=1;armed=false;misses=0;credit=0;shot=null;particles=[];labels=[];angle=-Math.PI/2;makeBoard();current=pick();next=pick();state='playing';overlay.classList.add('hidden');hud()}
+  function group(r,c,allow){const stack=[[r,c]],seen=new Set(),found=[];while(stack.length){const [a,b]=stack.pop(),key=a+','+b;if(seen.has(key)||!valid(a,b)||!board[a][b]||!allow(board[a][b]))continue;seen.add(key);found.push([a,b]);stack.push(...adjacent(a,b))}return found}
+  function sparkle(x,y,color,count=7){for(let i=0;i<count;i++){const a=Math.random()*Math.PI*2,s=50+Math.random()*150;particles.push({x,y,vx:Math.cos(a)*s,vy:Math.sin(a)*s,life:.4+Math.random()*.4,color})}}
+  function remove(r,c,chain){const v=board[r][c];if(!v)return 0;board[r][c]=null;const p=pos(r,c);sparkle(p.x,p.y,v==='bomb'?'#ffe58c':v,v==='bomb'?18:7);if(v==='bomb')chain.push([r,c]);return 1}
+  function blast(r,c,chain){const p=pos(r,c);shake=10;beep('bomb');let count=0;for(let a=0;a<ROWS;a++)for(let b=0;b<COLS;b++)if(board[a][b]){const q=pos(a,b);if(Math.hypot(q.x-p.x,q.y-p.y)<87)count+=remove(a,b,chain)}sparkle(p.x,p.y,'#fff7c5',28);labels.push({x:p.x,y:p.y,text:'BOOM!',life:1});return count}
+  function dropFloating(chain){const attached=new Set();for(let c=0;c<COLS;c++)if(board[0][c])for(const [r,b]of group(0,c,()=>true))attached.add(r+','+b);let n=0;for(let r=0;r<ROWS;r++)for(let c=0;c<COLS;c++)if(board[r][c]&&!attached.has(r+','+c))n+=remove(r,c,chain);return n}
+  function endShot(bombHit=null){if(!shot)return;let removed=0,matched=false,chain=[];
+    if(bombHit){const [r,c]=bombHit;board[r][c]=null;removed+=blast(r,c,chain);matched=true}
+    else{const slots=[];for(let r=0;r<ROWS;r++)for(let c=0;c<COLS;c++)if(!board[r][c]&&(r===0||adjacent(r,c).some(([a,b])=>board[a][b]))){const p=pos(r,c);slots.push({r,c,d:Math.hypot(p.x-shot.x,p.y-shot.y)})}slots.sort((a,b)=>a.d-b.d);
+      if(!slots.length){shot=null;lose();return}const{r,c}=slots[0];if(shot.bomb){removed+=blast(r,c,chain);matched=true}else{board[r][c]=shot.color;const same=group(r,c,v=>v===shot.color);if(same.length>=3){matched=true;for(const[a,b]of same)removed+=remove(a,b,chain);labels.push({x:pos(r,c).x,y:pos(r,c).y,text:'+'+same.length*10,life:.85});for(const[a,b]of same)for(const[nr,nc]of adjacent(a,b))if(board[nr][nc]==='bomb'){board[nr][nc]=null;chain.push([nr,nc])}}}}
+    shot=null;while(chain.length){const[r,c]=chain.shift();removed+=blast(r,c,chain);matched=true}
+    if(matched){removed+=dropFloating(chain);while(chain.length){const[r,c]=chain.shift();removed+=blast(r,c,chain);removed+=dropFloating(chain)}score+=removed*10+(bombHit?100:0);credit+=removed;if(credit>=18&&bombs<3){bombs++;credit-=18;labels.push({x:195,y:545,text:'BOMB +1',life:1})}if(score>best){best=score;persistProgress();reportScore()}misses=0;if(!bombHit)beep('pop')}else misses++;
+    if(!board.flat().some(Boolean)){win();return}if(board[15].some(Boolean)){lose();return}
+    if(misses>=7){for(let r=ROWS-1;r>0;r--)board[r]=[...board[r-1]];board[0]=Array.from({length:COLS},randomColor);misses=0;shake=5;if(board[15].some(Boolean)){lose();return}}
+    if(shots<=0){lose();return}current=available().includes(next)?next:pick();next=pick();hud();
+  }
+  function fire(){if(state!=='playing'||shot||shots<=0)return;shots--;const special=armed;if(special){bombs--;armed=false}shot={x:GUN.x,y:GUN.y-30,vx:Math.cos(angle)*700,vy:Math.sin(angle)*700,color:current,bomb:special};beep('shoot');hud()}
+  function win(){state='won';score+=shots*2;let changed=false;if(score>best){best=score;changed=true;reportScore()}if(level>=unlocked&&level<MAX){unlocked=level+1;changed=true}if(changed)persistProgress();beep('win');show('won')}
+  function lose(){state='lost';beep('lose');show('lost')}
+  function show(kind){state=kind;overlay.classList.remove('hidden');hud();if(kind==='menu'){card.innerHTML='<div class="mark">💎</div><h1>Crystal Pop</h1><p>Clear the crystal wall. Use bombs to break through and unlock 20 levels.</p><button class="primary" data-action="play">Play level '+level+'</button><div class="label">Unlocked levels</div><div class="levels" id="levels"></div><button class="secondary" data-action="rules">How to play</button>';const grid=card.querySelector('#levels');for(let i=1;i<=MAX;i++){const b=document.createElement('button');b.textContent=i<=unlocked?i:'🔒';b.disabled=i>unlocked;b.className=i<=unlocked?'open':'';b.dataset.level=i;grid.appendChild(b)}}
+    else if(kind==='rules')card.innerHTML='<div class="mark">🎯</div><h1>How to play</h1><p>Drag to aim and release to shoot. Connect 3 crystals of the same color. Clear all crystals before you run out of shots or they cross the danger line. Hit a glowing bomb, or use the Bomb button. Pop 18 crystals to earn another bomb.</p><button class="primary" data-action="menu">Back</button>';
+    else if(kind==='pause')card.innerHTML='<div class="mark">⏸</div><h1>Paused</h1><p>Your game is ready when you are.</p><button class="primary" data-action="resume">Resume</button><button class="secondary" data-action="menu">Main menu</button>';
+    else if(kind==='won')card.innerHTML='<div class="mark">✨</div><h1>Level clear!</h1><p>Score '+score+' · '+shots+' shots remaining</p><button class="primary" data-action="'+(level<MAX?'next':'menu')+'">'+(level<MAX?'Next level':'All levels complete')+'</button><button class="secondary" data-action="menu">Main menu</button>';
+    else card.innerHTML='<div class="mark">💫</div><h1>Try again</h1><p>Score '+score+'. Try using a bomb in a crowded area.</p><button class="primary" data-action="retry">Retry level '+level+'</button><button class="secondary" data-action="menu">Main menu</button>';
+  }
+  card.addEventListener('click',e=>{if(sdkPaused)return;const b=e.target.closest('button');if(!b)return;beep('tap');if(b.dataset.level){start(Number(b.dataset.level),true);return}switch(b.dataset.action){case'play':start(level,true);break;case'retry':start(level,false);break;case'next':start(level+1,false);break;case'resume':state='playing';overlay.classList.add('hidden');hud();break;case'menu':show('menu');break;case'rules':show('rules')}});
+  document.querySelector('#pause').addEventListener('click',()=>{if(sdkPaused)return;if(state==='playing')show('pause');else if(state==='pause'){state='playing';overlay.classList.add('hidden');hud()}});
+  document.querySelector('#menu').addEventListener('click',()=>{if(!sdkPaused)show('menu')});
+  soundButton.addEventListener('click',()=>{if(sdkPaused||playable)return;sound=!sound;try{localStorage.setItem('crystal-pop-sound',sound?'on':'off')}catch{}hud();beep('tap')});
+  bombButton.addEventListener('click',()=>{if(!sdkPaused&&state==='playing'&&!shot&&bombs>0){armed=!armed;beep('tap');hud()}});
+  function aim(x,y){const rect=canvas.getBoundingClientRect(),px=(x-rect.left)*W/rect.width,py=(y-rect.top)*H/rect.height;angle=Math.max(-Math.PI+.18,Math.min(-.18,Math.atan2(py-GUN.y,px-GUN.x)))}
+  canvas.addEventListener('pointerdown',e=>{if(sdkPaused||state!=='playing')return;e.preventDefault();pointer=e.pointerId;canvas.setPointerCapture?.(pointer);aim(e.clientX,e.clientY)});
+  canvas.addEventListener('pointermove',e=>{if(!sdkPaused&&state==='playing'&&(pointer===null||pointer===e.pointerId))aim(e.clientX,e.clientY)});
+  canvas.addEventListener('pointerup',e=>{if(sdkPaused||pointer!==e.pointerId)return;aim(e.clientX,e.clientY);pointer=null;fire()});canvas.addEventListener('pointercancel',()=>pointer=null);
+  window.addEventListener('keydown',e=>{if(sdkPaused)return;if(e.code==='Escape'&&state==='playing'){show('pause');return}if(state!=='playing')return;if(['ArrowLeft','ArrowRight'].includes(e.code)){e.preventDefault();angle=Math.max(-Math.PI+.18,Math.min(-.18,angle+(e.code==='ArrowLeft'?-.08:.08)))}if(e.code==='Space'){e.preventDefault();fire()}if(e.code==='KeyB'&&!shot&&bombs){armed=!armed;hud()}});
+  const sprites=new Map();function sprite(color){if(sprites.has(color))return sprites.get(color);const c=document.createElement('canvas');c.width=c.height=72;const g=c.getContext('2d'),base=color==='bomb'?'#dc9bff':color;
+    g.shadowColor=base;g.shadowBlur=12;g.beginPath();g.arc(36,36,28,0,Math.PI*2);const fill=g.createRadialGradient(25,18,3,36,39,31);fill.addColorStop(0,'#fff');fill.addColorStop(.22,base);fill.addColorStop(.72,color==='bomb'?'#67328d':base);fill.addColorStop(1,'#121b4e');g.fillStyle=fill;g.fill();g.shadowBlur=0;g.lineWidth=2;g.strokeStyle='#ffffffb0';g.stroke();g.beginPath();g.moveTo(36,10);g.lineTo(50,22);g.lineTo(59,36);g.lineTo(45,55);g.lineTo(28,57);g.lineTo(14,36);g.lineTo(25,17);g.closePath();g.strokeStyle='#ffffff91';g.lineWidth=1;g.stroke();g.beginPath();g.moveTo(25,17);g.lineTo(36,36);g.lineTo(50,22);g.moveTo(36,36);g.lineTo(45,55);g.moveTo(36,36);g.lineTo(14,36);g.strokeStyle='#ffffff72';g.stroke();g.beginPath();g.ellipse(26,20,9,4,-.65,0,Math.PI*2);g.fillStyle='#ffffffc7';g.fill();if(color==='bomb'){g.textAlign='center';g.font='bold 26px system-ui';g.fillStyle='#fff4bc';g.fillText('✦',36,45)}sprites.set(color,c);return c}
+  const bubble=(x,y,color,size=39)=>ctx.drawImage(sprite(color),x-size/2,y-size/2,size,size);
+  const stars=Array.from({length:46},(_,i)=>({x:(i*97.3)%W,y:(i*163.7)%H,r:.6+(i%3)*.45}));
+  function paint(t){ctx.save();if(shake)ctx.translate((Math.random()-.5)*shake,(Math.random()-.5)*shake);const bg=ctx.createLinearGradient(0,0,W,H);bg.addColorStop(0,'#233a83');bg.addColorStop(.54,'#191d53');bg.addColorStop(1,'#251749');ctx.fillStyle=bg;ctx.fillRect(0,0,W,H);ctx.fillStyle='#9ec7ff13';for(let i=0;i<6;i++){ctx.beginPath();ctx.arc((i*139+25)%W,80+i*110,85,0,Math.PI*2);ctx.fill()}
+    for(const s of stars){ctx.globalAlpha=.15+.55*(.5+.5*Math.sin(t*.001+s.x));ctx.fillStyle='#e8faff';ctx.beginPath();ctx.arc(s.x,s.y,s.r,0,Math.PI*2);ctx.fill()}ctx.globalAlpha=1;
+    ctx.fillStyle='#74edff16';ctx.beginPath();ctx.moveTo(0,130);ctx.lineTo(65,205);ctx.lineTo(0,300);ctx.fill();ctx.beginPath();ctx.moveTo(W,260);ctx.lineTo(W-65,340);ctx.lineTo(W,432);ctx.fill();
+    ctx.strokeStyle='#a9baff29';ctx.strokeRect(11,53,W-22,485);ctx.setLineDash([5,8]);ctx.strokeStyle='#ff91ae90';ctx.beginPath();ctx.moveTo(10,545);ctx.lineTo(W-10,545);ctx.stroke();ctx.setLineDash([]);ctx.font='800 12px system-ui';ctx.fillStyle='#f0eeff';ctx.fillText('CLEAR THE CRYSTALS',22,34);ctx.textAlign='right';ctx.fillStyle='#bac9ec';ctx.fillText('DROP '+misses+'/7',W-20,34);ctx.textAlign='left';
+    for(let r=0;r<ROWS;r++)for(let c=0;c<COLS;c++)if(board[r]?.[c]){const p=pos(r,c);bubble(p.x,p.y,board[r][c])}if(shot)bubble(shot.x,shot.y,shot.bomb?'bomb':shot.color,38);
+    else if(state==='playing'){let x=GUN.x,y=GUN.y-24,vx=Math.cos(angle),vy=Math.sin(angle);ctx.beginPath();ctx.moveTo(x,y);for(let i=0;i<10;i++){x+=vx*24;y+=vy*24;if(x<R||x>W-R){x=Math.max(R,Math.min(W-R,x));vx=-vx}ctx.lineTo(x,y)}ctx.strokeStyle='#d7f4ff96';ctx.lineWidth=2;ctx.setLineDash([5,8]);ctx.stroke();ctx.setLineDash([])}
+    ctx.fillStyle='#92bfff24';ctx.beginPath();ctx.roundRect(151,601,88,79,19);ctx.fill();if(['playing','menu','pause'].includes(state)){bubble(GUN.x,GUN.y,armed?'bomb':current,56);ctx.fillStyle='#bac9ec';ctx.font='800 11px system-ui';ctx.fillText('NEXT',290,623);bubble(350,614,next,34)}
+    for(const p of particles){ctx.globalAlpha=Math.max(0,p.life/.8);ctx.fillStyle=p.color;ctx.fillRect(p.x-2,p.y-2,4,4)}ctx.globalAlpha=1;for(const l of labels){ctx.globalAlpha=Math.min(1,l.life*2);ctx.font='900 21px system-ui';ctx.textAlign='center';ctx.fillStyle='#fff2bc';ctx.fillText(l.text,l.x,l.y)}ctx.globalAlpha=1;ctx.textAlign='left';ctx.restore()}
+  function frame(t){if(sdkPaused)return;const dt=Math.min((t-(last||t))/1000,.034);last=t;if(state==='playing'&&shot){const steps=Math.max(1,Math.ceil(dt/.007));for(let i=0;i<steps&&shot;i++){shot.x+=shot.vx*dt/steps;shot.y+=shot.vy*dt/steps;if(shot.x<R||shot.x>W-R){shot.x=Math.max(R,Math.min(W-R,shot.x));shot.vx*=-1}let hit=null;outer:for(let r=0;r<ROWS;r++)for(let c=0;c<COLS;c++)if(board[r][c]){const p=pos(r,c);if(Math.hypot(p.x-shot.x,p.y-shot.y)<D-3){hit=board[r][c]==='bomb'?[r,c]:[];break outer}}if(hit)endShot(hit.length?hit:null);else if(shot&&shot.y<=TOP+R)endShot()}}
+    if(state==='playing'){for(const p of particles){p.x+=p.vx*dt;p.y+=p.vy*dt;p.vy+=170*dt;p.life-=dt}particles=particles.filter(p=>p.life>0);for(const l of labels){l.y-=35*dt;l.life-=dt}labels=labels.filter(l=>l.life>0);shake=Math.max(0,shake-35*dt)}paint(t);requestAnimationFrame(frame)}
+  async function loadCloudProgress(){
+    try{
+      // This runs after the menu is playable. Never hold gameReady behind a network request.
+      const raw=await ytgame.game.loadData();
+      if(raw){
+        let saved;
+        try{saved=JSON.parse(raw)}catch(err){console.warn('Invalid cloud progress',err)}
+        if(saved&&typeof saved==='object'){
+          if(Number.isSafeInteger(saved.unlocked))unlocked=Math.max(unlocked,Math.min(MAX,Math.max(1,saved.unlocked)));
+          if(Number.isSafeInteger(saved.best))best=Math.max(best,Math.max(0,saved.best));
+        }
+      }
+      cloudLoaded=true;
+      if(state==='menu'){
+        level=unlocked;makeBoard();current=pick();next=pick();shots=65+Math.floor((level-1)/4)*8;
+        show('menu');
+      }else hud();
+      if(cloudDirty){cloudDirty=false;persistProgress()}
+    }catch(err){console.warn('Cloud progress unavailable',err)}
+  }
+  function boot(){
+    makeBoard();current=pick();next=pick();hud();paint(performance.now());
+    if(sdkAvailable)ytgame.game.firstFrameReady();
+    if(!playable){
+      try{
+        unlocked=Math.max(1,Math.min(MAX,Number(localStorage.getItem('crystal-pop-unlocked'))||1));
+        best=Math.max(0,Number(localStorage.getItem('crystal-pop-best'))||0);
+        sound=localStorage.getItem('crystal-pop-sound')!=='off';
+      }catch{}
+    }
+    level=unlocked;makeBoard();current=pick();next=pick();shots=65+Math.floor((level-1)/4)*8;
+    show('menu');paint(performance.now());ready=true;
+    if(sdkAvailable)ytgame.game.gameReady();
+    if(!sdkPaused)requestAnimationFrame(frame);
+    if(playable)void loadCloudProgress();
+  }
+  // The Test Suite may keep the iframe at zero size initially, so boot without
+  // waiting for requestAnimationFrame (which can be throttled in hidden frames).
+  try{boot()}catch(err){console.error('Game initialization failed',err);show('menu');ready=true;if(sdkAvailable)ytgame.game.gameReady();if(!sdkPaused)requestAnimationFrame(frame)}
+})();
+</script>
+</body>
+</html>
